@@ -1,16 +1,4 @@
-# Copyright 2023 The HuggingFace Team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -48,8 +36,7 @@ logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
 # Transformer Block
-# Used to exchange info between different conditions and input image
-# With reference to https://github.com/TencentARC/T2I-Adapter/blob/SD/ldm/modules/encoders/adapter.py#L147
+
 class QuickGELU(nn.Module):
     def forward(self, x: torch.Tensor):
         return x * torch.sigmoid(1.702 * x)
@@ -104,30 +91,12 @@ class ControlNetOutput(BaseOutput):
     """
     The output of [`ControlNetModel`].
 
-    Args:
-        down_block_res_samples (`tuple[torch.Tensor]`):
-            A tuple of downsample activations at different resolutions for each downsampling block. Each tensor should
-            be of shape `(batch_size, channel * resolution, height //resolution, width // resolution)`. Output can be
-            used to condition the original UNet's downsampling activations.
-        mid_down_block_re_sample (`torch.Tensor`):
-            The activation of the midde block (the lowest sample resolution). Each tensor should be of shape
-            `(batch_size, channel * lowest_resolution, height // lowest_resolution, width // lowest_resolution)`.
-            Output can be used to condition the original UNet's middle block activation.
-    """
-
     down_block_res_samples: Tuple[torch.Tensor]
     mid_block_res_sample: torch.Tensor
 
 
 class ControlNetConditioningEmbedding(nn.Module):
-    """
-    Quoting from https://arxiv.org/abs/2302.05543: "Stable Diffusion uses a pre-processing method similar to VQ-GAN
-    [11] to convert the entire dataset of 512 × 512 images into smaller 64 × 64 “latent images” for stabilized
-    training. This requires ControlNets to convert image-based conditions to 64 × 64 feature space to match the
-    convolution size. We use a tiny network E(·) of four convolution layers with 4 × 4 kernels and 2 × 2 strides
-    (activated by ReLU, channels are 16, 32, 64, 128, initialized with Gaussian weights, trained jointly with the full
-    model) to encode image-space conditions ... into feature maps ..."
-    """
+  
 
     # original setting is (16, 32, 96, 256)
     def __init__(
@@ -287,12 +256,7 @@ class ControlNetModel_Union(ModelMixin, ConfigMixin, FromOriginalModelMixin):
     ):
         super().__init__()
 
-        # If `num_attention_heads` is not defined (which is the case for most models)
-        # it will default to `attention_head_dim`. This looks weird upon first reading it and it is.
-        # The reason for this behavior is to correct for incorrectly named variables that were introduced
-        # when this library was created. The incorrect naming was only discovered much later in https://github.com/huggingface/diffusers/issues/2011#issuecomment-1547958131
-        # Changing `attention_head_dim` to `num_attention_heads` for 40,000+ configurations is too backwards breaking
-        # which is why we correct for the naming here.
+        
         num_attention_heads = num_attention_heads or attention_head_dim
 
         # Check inputs
@@ -383,13 +347,7 @@ class ControlNetModel_Union(ModelMixin, ConfigMixin, FromOriginalModelMixin):
                 raise ValueError(
                     "`class_embed_type`: 'projection' requires `projection_class_embeddings_input_dim` be set"
                 )
-            # The projection `class_embed_type` is the same as the timestep `class_embed_type` except
-            # 1. the `class_labels` inputs are not first converted to sinusoidal embeddings
-            # 2. it projects from an arbitrary input dimension.
-            #
-            # Note that `TimestepEmbedding` is quite general, being mainly linear layers and activations.
-            # When used for embedding actual timesteps, the timesteps are first converted to sinusoidal embeddings.
-            # As a result, `TimestepEmbedding` can be passed arbitrary vectors.
+           
             self.class_embedding = TimestepEmbedding(
                 projection_class_embeddings_input_dim, time_embed_dim
             )
@@ -408,9 +366,7 @@ class ControlNetModel_Union(ModelMixin, ConfigMixin, FromOriginalModelMixin):
                 num_heads=addition_embed_type_num_heads,
             )
         elif addition_embed_type == "text_image":
-            # text_embed_dim and image_embed_dim DON'T have to be `cross_attention_dim`. To not clutter the __init__ too much
-            # they are set to `cross_attention_dim` here as this is exactly the required dimension for the currently only use
-            # case when `addition_embed_type == "text_image"` (Kadinsky 2.1)`
+           
             self.add_embedding = TextImageTimeEmbedding(
                 text_embed_dim=cross_attention_dim,
                 image_embed_dim=cross_attention_dim,
@@ -436,11 +392,7 @@ class ControlNetModel_Union(ModelMixin, ConfigMixin, FromOriginalModelMixin):
             conditioning_channels=conditioning_channels,
         )
 
-        # Copyright by Qi Xin(2024/07/06)
-        # Condition Transformer(fuse single/multi conditions with input image)
-        # The Condition Transformer augment the feature representation of conditions
-        # The overall design is somewhat like resnet. The output of Condition Transformer is used to predict a condition bias adding to the original condition feature.
-        # num_control_type = 6
+        
         num_trans_channel = 320
         num_trans_head = 8
         num_trans_layer = 1
@@ -461,9 +413,7 @@ class ControlNetModel_Union(ModelMixin, ConfigMixin, FromOriginalModelMixin):
         )
         # -----------------------------------------------------------------------------------------------------
 
-        # Copyright by Qi Xin(2024/07/06)
-        # Control Encoder to distinguish different control conditions
-        # A simple but effective module, consists of an embedding layer and a linear layer, to inject the control info to time embedding.
+        
         self.control_type_proj = Timesteps(
             addition_time_embed_dim, flip_sin_to_cos, freq_shift
         )
@@ -721,7 +671,7 @@ class ControlNetModel_Union(ModelMixin, ConfigMixin, FromOriginalModelMixin):
         for name, module in self.named_children():
             fn_recursive_attn_processor(name, module, processor)
 
-    # Copied from diffusers.models.unet_2d_condition.UNet2DConditionModel.set_default_attn_processor
+   
     def set_default_attn_processor(self):
         """
         Disables custom attention processors and sets the default attention implementation.
@@ -743,21 +693,9 @@ class ControlNetModel_Union(ModelMixin, ConfigMixin, FromOriginalModelMixin):
 
         self.set_attn_processor(processor, _remove_lora=True)
 
-    # Copied from diffusers.models.unet_2d_condition.UNet2DConditionModel.set_attention_slice
+
     def set_attention_slice(self, slice_size):
-        r"""
-        Enable sliced attention computation.
-
-        When this option is enabled, the attention module splits the input tensor in slices to compute attention in
-        several steps. This is useful for saving some memory in exchange for a small decrease in speed.
-
-        Args:
-            slice_size (`str` or `int` or `list(int)`, *optional*, defaults to `"auto"`):
-                When `"auto"`, input to the attention heads is halved, so attention is computed in two steps. If
-                `"max"`, maximum amount of memory is saved by running only one slice at a time. If a number is
-                provided, uses as many slices as `attention_head_dim // slice_size`. In this case, `attention_head_dim`
-                must be a multiple of `slice_size`.
-        """
+        
         sliceable_head_dims = []
 
         def fn_recursive_retrieve_sliceable_dims(module: torch.nn.Module):
@@ -952,8 +890,7 @@ class ControlNetModel_Union(ModelMixin, ConfigMixin, FromOriginalModelMixin):
                 add_embeds = add_embeds.to(emb.dtype)
                 aug_emb = self.add_embedding(add_embeds)
 
-        # Copyright by Qi Xin(2024/07/06)
-        # inject control type info to time embedding to distinguish different control conditions
+       
         control_type = added_cond_kwargs.get("control_type")
         control_embeds = self.control_type_proj(control_type.flatten())
         control_embeds = control_embeds.reshape((t_emb.shape[0], -1))
